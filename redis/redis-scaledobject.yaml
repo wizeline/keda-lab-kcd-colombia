@@ -1,0 +1,41 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: redis-queue-scaler
+spec:
+  scaleTargetRef:
+    name: task-processor
+  pollingInterval: 10               # Polling interval in seconds (default: 30)
+  cooldownPeriod: 60              # Cooldown period in seconds (default: 300)
+  minReplicaCount: 1               # Minimum number of replicas
+  maxReplicaCount: 10             # Maximum number of replicas
+  triggers:
+  - type: redis
+    metadata:
+      # Use full DNS name since KEDA operator runs in different namespace
+      # Replace NAMESPACE with your actual namespace name
+      address: redis.workshop-user-55.svc.cluster.local:6379
+      listName: task_queue
+      listLength: "5"
+      activationListLength: "2"
+      enableTLS: "false"
+    authenticationRef:
+      name: redis-auth
+---
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: redis-auth
+spec:
+  secretTargetRef:
+  - parameter: password
+    name: redis-secret
+    key: password
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: redis-secret
+type: Opaque
+data:
+  password: cmVkaXMxMjM=  # base64 encoded "redis123"

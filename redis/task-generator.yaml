@@ -1,0 +1,98 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: task-generator-script
+data:
+  generator.py: |
+    import redis
+    import time
+    import json
+    import random
+    import os
+
+    redis_host = os.getenv('REDIS_HOST', 'redis.workshop-user-55.svc.cluster.local')
+    redis_port = int(os.getenv('REDIS_PORT', '6379'))
+    redis_password = os.getenv('REDIS_PASSWORD', 'redis123')
+
+    r = redis.Redis(host=redis_host, port=redis_port, password=redis_password, decode_responses=True)
+
+    print(f'Connected to Redis at {redis_host}:{redis_port}')
+    print('Task generator started. Generating tasks...')
+
+    task_id = 1
+    while True:
+        try:
+            # Generate 1-4 tasks every 10-20 seconds
+            num_tasks = random.randint(1, 4)
+            
+            for _ in range(num_tasks):
+                task = {
+                    'id': f'task-{task_id}',
+                    'processing_time': random.randint(2, 8),
+                    'created_at': time.time()
+                }
+                
+                r.lpush('task_queue', json.dumps(task))
+                print(f'Generated task {task["id"]}')
+                task_id += 1
+            
+            # Show current queue status
+            queue_length = r.llen('task_queue')
+            print(f'Queue length: {queue_length}')
+            
+            # Wait before generating more tasks
+            sleep_time = random.randint(10, 20)
+            print(f'Sleeping for {sleep_time} seconds...')
+            time.sleep(sleep_time)
+            
+        except Exception as e:
+            print(f'Error generating tasks: {e}')
+            time.sleep(5)
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: task-generator
+  labels:
+    app: task-generator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: task-generator
+  template:
+    metadata:
+      labels:
+        app: task-generator
+    spec:
+      containers:
+      - name: task-generator
+        image: python:3.11-slim
+        command:
+        - /bin/bash
+        - -c
+        - |
+          pip install redis==5.0.1 > /dev/null 2>&1
+          echo "Starting task generator..."
+          python3 -u /scripts/generator.py
+        env:
+        - name: REDIS_HOST
+          value: "redis.NAMESPACE.svc.cluster.local"
+        - name: REDIS_PORT
+          value: "6379"
+        - name: REDIS_PASSWORD
+          value: "redis123"
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+        volumeMounts:
+        - name: script-volume
+          mountPath: /scripts
+      volumes:
+      - name: script-volume
+        configMap:
+          name: task-generator-script

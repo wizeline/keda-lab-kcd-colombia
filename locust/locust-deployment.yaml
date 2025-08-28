@@ -1,0 +1,62 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cpu-webapp
+data:
+  main.py: |
+    from fastapi import FastAPI, Query
+    import time
+
+    app = FastAPI()
+
+    def fib(n:int)->int:
+        if n <= 1: return n
+        return fib(n-1) + fib(n-2)
+
+    @app.get("/")
+    def root():
+        return {"ok": True, "hint": "GET /fib?n=35 (try 33–38 to vary load)"}
+
+    @app.get("/fib")
+    def fib_ep(n: int = Query(35, ge=1, le=45)):
+        start = time.time()
+        val = fib(n)
+        took = time.time() - start
+        return {"n": n, "fib": val, "seconds": round(took, 3)}
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webapp
+  labels:
+    app: webapp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: webapp
+  template:
+    metadata:
+      labels:
+        app: webapp
+    spec:
+      terminationGracePeriodSeconds: 5   # default is 30
+      containers:
+        - name: web
+          image: tiangolo/uvicorn-gunicorn-fastapi:python3.11
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: app-code
+              mountPath: /app
+          resources:
+            requests: { cpu: "250m", memory: "256Mi" }
+            limits:   { cpu: "1000m", memory: "512Mi" }
+      volumes:
+        - name: app-code
+          configMap:
+            name: cpu-webapp
+            items:
+              - key: main.py
+                path: main.py
